@@ -24,11 +24,12 @@ import { Fragment, useEffect, useState } from "react";
 import { Button, ContextMenu } from "@radix-ui/themes";
 import useTranslation from "next-translate/useTranslation";
 import { useUser } from "../store/session";
+import CreateTicketModal from "../components/CreateTicketModal";
 
-const projects = [
-  { id: 1, name: "Workflow Inc. / Website Redesign", url: "#" },
-  // More projects...
-];
+import "@blocknote/core/fonts/inter.css";
+import "@blocknote/mantine/style.css";
+
+
 const quickActions = [
   // { name: "Add new file...", icon: DocumentPlusIcon, shortcut: "N", url: "#" },
   // { name: "Add new folder...", icon: FolderPlusIcon, shortcut: "F", url: "#" },
@@ -85,7 +86,6 @@ function CommandModal() {
   }
 
   useEffect(() => {
-    console.log(query.length);
     if (query.length !== 0 && query !== "") {
       GlobalTicketSearch();
     }
@@ -314,12 +314,11 @@ export default function NewLayout({ children }: any) {
   const locale = user ? user.language : "en";
 
   const [queues, setQueues] = useState([]);
+  const [keypressdown, setKeyPressDown] = useState(false)
 
   const { t, lang } = useTranslation("peppermint");
 
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [tab, setTab] = useState("unread");
-  const [currentPath, setCurrentPath] = useState();
 
   if (!user) {
     location.push("/auth/login");
@@ -335,13 +334,13 @@ export default function NewLayout({ children }: any) {
   }
 
   const navigation = [
-    {
-      name: t("create_ticket"),
-      href: `/${locale}/new`,
-      icon: PlusIcon,
-      current: location.pathname === "/new" ? true : false,
-      initial: "c",
-    },
+    // {
+    //   name: t("create_ticket"),
+    //   href: `/${locale}/new`,
+    //   icon: PlusIcon,
+    //   current: location.pathname === "/new" ? true : false,
+    //   initial: "c",
+    // },
     {
       name: t("sl_dashboard"),
       href: `/${locale}/`,
@@ -429,7 +428,6 @@ export default function NewLayout({ children }: any) {
 
   function handleKeyPress(event: any) {
     const pathname = location.pathname;
-    console.log(pathname);
     if (
       document.activeElement!.tagName !== "INPUT" &&
       document.activeElement!.tagName !== "TEXTAREA" &&
@@ -438,7 +436,7 @@ export default function NewLayout({ children }: any) {
     ) {
       switch (event.key) {
         case "c":
-          location.push("/new");
+          setKeyPressDown(true)
           break;
         case "h":
           location.push("/");
@@ -457,6 +455,9 @@ export default function NewLayout({ children }: any) {
           break;
         case "f":
           location.push("/tickets/closed");
+          break;
+        case "Escape":
+          location.push("/tickets");
           break;
         default:
           break;
@@ -759,9 +760,10 @@ export default function NewLayout({ children }: any) {
               </Link>
             </div>
             <nav className="flex flex-1 flex-col px-6">
-              <ul role="list" className="flex flex-1 flex-col gap-y-7">
+              <ul role="list" className="flex flex-1 flex-col gap-y-7 w-full">
                 <li>
-                  <ul role="list" className="-mx-2 space-y-1">
+                  <ul role="list" className="-mx-2 space-y-1 w-full">
+                    <CreateTicketModal keypress={keypressdown} setKeyPressDown={setKeyPressDown} />
                     {navigation.map((item: any) => (
                       <li key={item.name}>
                         <Link
@@ -952,7 +954,7 @@ export default function NewLayout({ children }: any) {
                 {user.isAdmin && (
                   <Link href="https://github.com/Peppermint-Lab/peppermint/releases">
                     <span className="inline-flex items-center rounded-md bg-green-700/10 px-3 py-2 text-xs font-medium text-green-600 ring-1 ring-inset ring-green-500/20">
-                      Version 0.4.7
+                      Version 0.4.8
                     </span>
                   </Link>
                 )}
@@ -991,7 +993,10 @@ export default function NewLayout({ children }: any) {
                       Send Feedback
                     </Button> */}
 
-                    <Button variant="outline" className="hover:cursor-pointer whitespace-nowrap">
+                    <Button
+                      variant="outline"
+                      className="hover:cursor-pointer whitespace-nowrap"
+                    >
                       Send Feedback
                     </Button>
                   </Link>

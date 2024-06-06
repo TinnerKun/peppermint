@@ -5,29 +5,42 @@ import {
   CheckIcon,
   ChevronUpDownIcon,
 } from "@heroicons/react/20/solid";
-import { Link, RichTextEditor } from "@mantine/tiptap";
-import Highlight from "@tiptap/extension-highlight";
-import Underline from "@tiptap/extension-underline";
-import { useEditor } from "@tiptap/react";
-import StarterKit from "@tiptap/starter-kit";
 import moment from "moment";
 import { useRouter } from "next/router";
-import { Fragment, useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState, useMemo } from "react";
 import { useQuery } from "react-query";
 import renderHTML from "react-render-html";
 // import TextAlign from '@tiptap/extension-text-align';
 import { notifications } from "@mantine/notifications";
 import { Button, DropdownMenu, Text, Tooltip } from "@radix-ui/themes";
-import SubScript from "@tiptap/extension-subscript";
-import Superscript from "@tiptap/extension-superscript";
 import { getCookie } from "cookies-next";
 import useTranslation from "next-translate/useTranslation";
 import Frame from "react-frame-component";
+import { useDebounce } from "use-debounce";
+import { useCreateBlockNote } from "@blocknote/react";
+import {
+  Block,
+  BlockNoteEditor,
+  PartialBlock,
+  tryParseHTMLToBlocks,
+} from "@blocknote/core";
+import { BlockNoteView } from "@blocknote/mantine";
 
 import { useUser } from "../../store/session";
 
 function classNames(...classes: any) {
   return classes.filter(Boolean).join(" ");
+}
+
+function isHTML(str) {
+  var a = document.createElement("div");
+  a.innerHTML = str;
+
+  for (var c = a.childNodes, i = c.length; i--; ) {
+    if (c[i].nodeType == 1) return true;
+  }
+
+  return false;
 }
 
 const ticketStatusMapping = {
@@ -61,6 +74,17 @@ export default function Ticket() {
     refetch();
   }, [router]);
 
+  const [initialContent, setInitialContent] = useState<
+    PartialBlock[] | undefined | "loading"
+  >("loading");
+
+  const editor = useMemo(() => {
+    if (initialContent === "loading") {
+      return undefined;
+    }
+    return BlockNoteEditor.create({ initialContent });
+  }, [initialContent]);
+
   const [edit, setEdit] = useState(false);
   const [editTime, setTimeEdit] = useState(false);
   const [assignedEdit, setAssignedEdit] = useState(false);
@@ -72,7 +96,7 @@ export default function Ticket() {
   const [note, setNote] = useState<any>();
   const [issue, setIssue] = useState<any>();
   const [title, setTitle] = useState<any>();
-  const [uploaded, setUploaded] = useState<any>();
+  // const [uploaded, setUploaded] = useState<any>();
   const [priority, setPriority] = useState<any>();
   const [ticketStatus, setTicketStatus] = useState<any>();
   const [comment, setComment] = useState<any>();
@@ -80,22 +104,6 @@ export default function Ticket() {
   const [publicComment, setPublicComment] = useState<any>(false);
   const [timeReason, setTimeReason] = useState("");
   const [file, setFile] = useState<File | null>(null);
-
-  const IssueEditor = useEditor({
-    extensions: [
-      StarterKit,
-      Underline,
-      Link,
-      Superscript,
-      SubScript,
-      Highlight,
-      // TextAlign.configure({ types: ['heading', 'paragraph'] }),
-    ],
-    content: issue,
-    onUpdate({ editor }) {
-      setIssue(editor.getHTML());
-    },
-  });
 
   const history = useRouter();
 
@@ -110,7 +118,7 @@ export default function Ticket() {
       },
       body: JSON.stringify({
         id,
-        detail: issue,
+        detail: JSON.stringify(debouncedValue),
         note,
         title,
         priority,
@@ -120,7 +128,7 @@ export default function Ticket() {
       .then((res) => res.json())
       .then(() => {
         setEdit(false);
-        refetch();
+        // refetch();
       });
   }
 
@@ -296,13 +304,55 @@ export default function Ticket() {
     transferTicket();
   }, [n]);
 
+  const [debouncedValue] = useDebounce(issue, 500);
+
+  useEffect(() => {
+    if(issue) {
+      update()
+    }
+  }, [debouncedValue]);
+
+  async function loadFromStorage() {
+    const storageString = data.ticket.detail as PartialBlock[];
+
+    if (isHTML(storageString)) {
+      return undefined;
+    } else {
+      return storageString
+        ? (JSON.parse(storageString) as PartialBlock[])
+        : undefined;
+    }
+  }
+
+  async function convertHTML() {
+    const blocks = await editor.tryParseHTMLToBlocks(data.ticket.detail);
+    editor.replaceBlocks(editor.document, blocks);
+  }
+
+  // Loads the previously stored editor contents.
   useEffect(() => {
     if (status === "success") {
-      if (IssueEditor) {
-        IssueEditor.commands.setContent(data.ticket.detail);
-      }
+      loadFromStorage().then((content) => {
+        console.log(content);
+        setInitialContent(content);
+      });
     }
-  }, [data, IssueEditor]);
+  }, [status, data]);
+
+  useEffect(() => {
+    if (initialContent === undefined) {
+      convertHTML();
+    }
+  }, [initialContent]);
+
+  if (editor === undefined) {
+    return "Loading content...";
+  }
+
+  const handleInputChange = (editor) => {
+    setIssue(editor.document);
+  };
+
 
   return (
     <div>
@@ -359,40 +409,23 @@ export default function Ticket() {
                       )}
                     </div>
                   </div>
-                  <div className="mt-4 flex space-x-3 md:mt-0">
+                  <div className="mt-4 flex h-8 space-x-3 md:mt-0">
                     {!edit ? (
-                      <DropdownMenu.Root>
-                        <DropdownMenu.Trigger className="hover:cursor-pointer">
-                          <Button variant="outline">Options</Button>
-                        </DropdownMenu.Trigger>
-                        <DropdownMenu.Content className="min-w-[176px] mr-6">
-                          <DropdownMenu.Item
-                            className="min-w-[176px] capitalize hover:cursor-pointer"
-                            onClick={() => setEdit(!edit)}
-                          >
-                            {!edit ? t("edit-btn") : "save"}
-                          </DropdownMenu.Item>
-
-                          {user.isAdmin && (
-                            <DropdownMenu.Item
-                              className="hover:cursor-pointer"
-                              onClick={() => hide(!data.ticket.hidden)}
-                            >
-                              {data.ticket.hidden
-                                ? "Show Global"
-                                : "Hide Ticket"}
-                            </DropdownMenu.Item>
-                          )}
-                        </DropdownMenu.Content>
-                      </DropdownMenu.Root>
-                    ) : (
-                      <Button
-                        variant="outline"
-                        className="hover:cursor-pointer align-top"
-                        onClick={() => update()}
+                      <button
+                        type="button"
+                        onClick={() => setEdit(true)}
+                        className="inline-flex justify-center gap-x-1.5 rounded-md bg-white px-3 py-1.5 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50"
                       >
-                        Save
-                      </Button>
+                        {t("edit")}
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => update()}
+                        className="inline-flex justify-center gap-x-1.5 rounded-md bg-white px-3 py-1.5 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50"
+                      >
+                        {t("save")}
+                      </button>
                     )}
                   </div>
                 </div>
@@ -484,61 +517,53 @@ export default function Ticket() {
                       </>
                     ) : (
                       <>
-                        <span>Created by at </span>
-                        <span className="">
-                          {moment(data.ticket.createdAt).format("DD/MM/YYYY")}
-                        </span>
+                        {data.ticket.createdBy ? (
+                          <>
+                            <span>
+                              Created by{" "}
+                              <strong>{data.ticket.createdBy.name}</strong> at{" "}
+                            </span>
+                            <span className="">
+                              {moment(data.ticket.createdAt).format("LLL")}
+                              {data.ticket.client && (
+                                <span>
+                                  {" "}
+                                  for <strong>{data.ticket.client.name}</strong>
+                                </span>
+                              )}
+                            </span>
+                          </>
+                        ) : (
+                          <>
+                            <span>Created at </span>
+                            <span className="">
+                              <strong>
+                                {moment(data.ticket.createdAt).format("LLL")}
+                              </strong>
+                              {data.ticket.client && (
+                                <span>
+                                  {" "}
+                                  for <strong>{data.ticket.client.name}</strong>
+                                </span>
+                              )}
+                            </span>
+                          </>
+                        )}
                       </>
                     )}
                   </div>
                   <div className="prose max-w-none mt-2">
                     {edit && !data.ticket.fromImap ? (
-                      <RichTextEditor
-                        editor={IssueEditor}
-                        className="dark:bg-gray-900 dark:text-white rounded-none border-none"
-                      >
-                        <RichTextEditor.Toolbar className="dark:text-white rounded-none dark:bg-[#0A090C]">
-                          <RichTextEditor.ControlsGroup>
-                            <RichTextEditor.Bold />
-                            <RichTextEditor.Italic />
-                            <RichTextEditor.Underline />
-                            <RichTextEditor.Strikethrough />
-                            <RichTextEditor.ClearFormatting />
-                            <RichTextEditor.Highlight />
-                            <RichTextEditor.Code />
-                          </RichTextEditor.ControlsGroup>
-
-                          <RichTextEditor.ControlsGroup>
-                            <RichTextEditor.H1 />
-                            <RichTextEditor.H2 />
-                            <RichTextEditor.H3 />
-                            <RichTextEditor.H4 />
-                          </RichTextEditor.ControlsGroup>
-
-                          <RichTextEditor.ControlsGroup>
-                            <RichTextEditor.Blockquote />
-                            <RichTextEditor.Hr />
-                            <RichTextEditor.BulletList />
-                            <RichTextEditor.OrderedList />
-                            <RichTextEditor.Subscript />
-                            <RichTextEditor.Superscript />
-                          </RichTextEditor.ControlsGroup>
-
-                          <RichTextEditor.ControlsGroup>
-                            <RichTextEditor.Link />
-                            <RichTextEditor.Unlink />
-                          </RichTextEditor.ControlsGroup>
-
-                          <RichTextEditor.ControlsGroup>
-                            <RichTextEditor.AlignLeft />
-                            <RichTextEditor.AlignCenter />
-                            <RichTextEditor.AlignJustify />
-                            <RichTextEditor.AlignRight />
-                          </RichTextEditor.ControlsGroup>
-                        </RichTextEditor.Toolbar>
-
-                        <RichTextEditor.Content className="dark:bg-[#0A090C] dark:text-white min-h-[50vh] rounded-none" />
-                      </RichTextEditor>
+                      <>
+                        <BlockNoteView
+                          editor={editor}
+                          sideMenu={false}
+                          className="m-0 p-0"
+                          // onChange={() => {
+                          //   setIssue(editor.document);
+                          // }}
+                        />
+                      </>
                     ) : (
                       <div className="">
                         {data.ticket.fromImap ? (
@@ -550,7 +575,12 @@ export default function Ticket() {
                           </div>
                         ) : (
                           <div className="">
-                            {renderHTML(data.ticket.detail)}
+                            <BlockNoteView
+                              editor={editor}
+                              sideMenu={false}
+                              className="m-0 p-0"
+                              onChange={handleInputChange}
+                            />
                           </div>
                         )}
                       </div>
@@ -931,7 +961,7 @@ export default function Ticket() {
                       )}
                     </ul>
                   ) : (
-                    <div className={'w-[150px]'}>
+                    <div className={"w-[150px]"}>
                       <Listbox value={priority} onChange={setPriority}>
                         {({ open }) => (
                           <>
@@ -1114,51 +1144,53 @@ export default function Ticket() {
                                 leaveTo="opacity-0"
                               >
                                 <Listbox.Options className="absolute z-10 mt-1 max-h-60 w-full overflow-auto rounded-md bg-white py-1 text-base shadow-lg ring-1 ring-black ring-opacity-5 focus:outline-none sm:text-sm">
-                                  {Object.keys(ticketStatusMapping).map((status) => (
-                                    <Listbox.Option
-                                      key={status}
-                                      className={({ active }) =>
-                                        classNames(
-                                          active
-                                            ? "bg-indigo-600 text-white"
-                                            : "text-gray-900",
-                                          "relative cursor-default select-none py-2 pl-3 pr-9"
-                                        )
-                                      }
-                                      value={status}
-                                    >
-                                      {({ selected, active }) => (
-                                        <>
-                                          <span
-                                            className={classNames(
-                                              selected
-                                                ? "font-semibold"
-                                                : "font-normal",
-                                              "block truncate"
-                                            )}
-                                          >
-                                            {ticketStatusMapping[status]}
-                                          </span>
-
-                                          {selected ? (
+                                  {Object.keys(ticketStatusMapping).map(
+                                    (status) => (
+                                      <Listbox.Option
+                                        key={status}
+                                        className={({ active }) =>
+                                          classNames(
+                                            active
+                                              ? "bg-indigo-600 text-white"
+                                              : "text-gray-900",
+                                            "relative cursor-default select-none py-2 pl-3 pr-9"
+                                          )
+                                        }
+                                        value={status}
+                                      >
+                                        {({ selected, active }) => (
+                                          <>
                                             <span
                                               className={classNames(
-                                                active
-                                                  ? "text-white"
-                                                  : "text-indigo-600",
-                                                "absolute inset-y-0 right-0 flex items-center pr-4"
+                                                selected
+                                                  ? "font-semibold"
+                                                  : "font-normal",
+                                                "block truncate"
                                               )}
                                             >
-                                              <CheckIcon
-                                                className="h-5 w-5"
-                                                aria-hidden="true"
-                                              />
+                                              {ticketStatusMapping[status]}
                                             </span>
-                                          ) : null}
-                                        </>
-                                      )}
-                                    </Listbox.Option>
-                                  ))}
+
+                                            {selected ? (
+                                              <span
+                                                className={classNames(
+                                                  active
+                                                    ? "text-white"
+                                                    : "text-indigo-600",
+                                                  "absolute inset-y-0 right-0 flex items-center pr-4"
+                                                )}
+                                              >
+                                                <CheckIcon
+                                                  className="h-5 w-5"
+                                                  aria-hidden="true"
+                                                />
+                                              </span>
+                                            ) : null}
+                                          </>
+                                        )}
+                                      </Listbox.Option>
+                                    )
+                                  )}
                                 </Listbox.Options>
                               </Transition>
                             </div>

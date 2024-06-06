@@ -27,6 +27,19 @@
 .ProseMirror {
   overflow-y: auto;
   max-height: 70vh;
+  min-height: 10vh;
+}
+
+.ProseMirror ol {
+  list-style: disc !important;
+}
+
+.ProseMirror ul {
+  list-style: disc !important;
+}
+
+.ProseMirror li {
+  list-style: disc !important;
 }
 
 .mantine-1drwy5n {
@@ -36,4 +49,8 @@
 
 .mantine-f6e83k {
   color: unset !important;
+}
+
+.bn-editor {
+  padding-inline: 0px !important;
 }
